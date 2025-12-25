@@ -6,4 +6,4 @@ resources:
 - weaviate.yaml
 images:
 - name: ghcr.io/kurazuuuuuu/agent-rag-mcp-fastmcp
-  newTag: v0.1.0
+  newTag: main

@@ -57,7 +57,7 @@ spec:
       volumes:
         - name: ollama-data
           persistentVolumeClaim:
-            claimName: ollama-data-pvc
+            claimName: agent-rag-mcp-ollama-data-pvc
 ---
 apiVersion: v1
 kind: Service

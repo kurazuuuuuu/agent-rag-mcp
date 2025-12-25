@@ -54,7 +54,7 @@ spec:
       volumes:
         - name: weaviate-data
           persistentVolumeClaim:
-            claimName: weaviate-data-pvc
+            claimName: agent-rag-mcp-weaviate-data-pvc
 ---
 apiVersion: v1
 kind: Service

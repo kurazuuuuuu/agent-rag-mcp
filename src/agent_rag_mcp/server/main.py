@@ -13,8 +13,10 @@ from urllib.parse import urlparse
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.debug import DebugTokenVerifier
 
-from agent_rag_mcp.config import get_config
-from agent_rag_mcp.gemini_rag import GeminiRAGClient
+from agent_rag_mcp.core.config import get_config
+from agent_rag_mcp.server.gemini import GeminiClient
+from agent_rag_mcp.server.weaviate_store import ExperienceStore
+import json
 
 # Supported file extensions for documentation
 SUPPORTED_EXTENSIONS = ["*.md", "*.txt", "*.rst", "*.json", "*.yaml", "*.yml"]
@@ -103,7 +105,7 @@ def generate_store_name_from_path(local_path: str) -> str:
 
 
 async def init_store_from_repo(
-    client: GeminiRAGClient,
+    client: GeminiClient,
     repo_url: str,
     docs_path: str,
     branch: str,
@@ -168,7 +170,7 @@ async def init_store_from_repo(
 
 
 async def init_store_from_local(
-    client: GeminiRAGClient,
+    client: GeminiClient,
     local_docs_path: str,
     store_name: str | None,
 ) -> tuple[str, str, list[str]]:
@@ -211,7 +213,8 @@ async def init_store_from_local(
 class ServerState:
     """Global server state, initialized during lifespan startup."""
 
-    rag_client: GeminiRAGClient | None = None
+    rag_client: GeminiClient | None = None
+    experience_store: ExperienceStore | None = None
     store_name: str | None = None
     store_id: str | None = None
 
@@ -233,7 +236,16 @@ async def lifespan(app: FastMCP) -> AsyncIterator[None]:
     else:
         print("⚠️  Authentication disabled (set AUTH_TOKEN to enable)")
 
-    # Check if we have required configuration
+    # Initialize Experience Store (Weaviate)
+    try:
+        print("🧠 Initializing Experience Store (Weaviate + Ollama)...")
+        _state.experience_store = ExperienceStore()
+        print(f"   Connected to Weaviate at {config.weaviate_url}")
+    except Exception as e:
+        print(f"❌ Failed to connect to Experience Store: {e}")
+        print("   Dynamic Learning features will be unavailable.")
+
+    # Check if we have required configuration for Doc RAG
     if not config.has_document_source:
         print("⚠️  No document source configured.")
         print("   Set RAG_REPO_URL or RAG_LOCAL_DOCS_PATH environment variable.")
@@ -243,7 +255,7 @@ async def lifespan(app: FastMCP) -> AsyncIterator[None]:
 
     # Initialize RAG client
     print("🔧 Initializing Gemini RAG client...")
-    _state.rag_client = GeminiRAGClient()
+    _state.rag_client = GeminiClient()
 
     # Determine store name
     if config.rag_store_name:
@@ -305,6 +317,8 @@ async def lifespan(app: FastMCP) -> AsyncIterator[None]:
 
     # Cleanup on shutdown
     print("👋 Server shutting down...")
+    if _state.experience_store:
+        _state.experience_store.close()
 
 
 # ==============================================================================
@@ -323,6 +337,9 @@ mcp = FastMCP(
         Use the ask_project_document tool to get answers based on the indexed documentation.
         The server uses semantic search to find relevant information and generates
         accurate answers grounded in the actual documents.
+
+        Use the ask_code_pattern tool to learn from previous coding experiences and 
+        retrieve dynamic patterns.
     """,
     lifespan=lifespan,
     auth=_auth_provider,
@@ -355,7 +372,7 @@ async def ask_project_document(question: str) -> str:
         )
 
     # Query the documents
-    answer = await _state.rag_client.query(question, store_name=_state.store_id)
+    answer = await _state.rag_client.query_docs(question, store_name=_state.store_id)
     return answer
 
 
@@ -370,3 +387,107 @@ async def get_store_info() -> str:
         return "No document store is currently initialized."
 
     return f"Document Store: {_state.store_name}\nStore ID: {_state.store_id}"
+
+
+@mcp.tool
+async def get_request_schema_template() -> str:
+    """Get the schema template for code pattern requests.
+
+    Returns:
+        The content of schema/request_schema.toon template.
+    """
+    schema_path = Path("schema/request_schema.toon")
+    if not schema_path.exists():
+        # Try finding it relative to module if cwd is different
+        # Assuming src layout: src/agent_rag_mcp/server.py -> ../../../schema
+        alt_path = Path(__file__).parent.parent.parent / "schema" / "request_schema.toon"
+        if alt_path.exists():
+            schema_path = alt_path
+        else:
+            return "Error: Schema template file not found."
+
+    try:
+        return schema_path.read_text(encoding="utf-8")
+    except Exception as e:
+        return f"Error reading schema file: {e}"
+
+
+@mcp.tool
+async def ask_code_pattern(request_data: str) -> str:
+    """Ask for code patterns or share an experience to learn from.
+
+    This tool enables Dynamic Learning RAG.
+    - If you provide a result/code in your request, it will be learned (stored).
+    - It always searches for similar past experiences to provide context.
+    - It uses Gemini to analyze the request and retrieved patterns to give advice.
+
+    Args:
+        request_data: JSON string matching the request_schema.toon structure.
+                      Must include 'request' key.
+
+    Returns:
+        Analysis and relevant patterns from the dynamic knowledge base.
+    """
+    if _state.experience_store is None:
+        return "Error: Experience Store is not available (Weaviate connection failed)."
+    
+    if _state.rag_client is None:
+        return "Error: Gemini Client is not available."
+
+    try:
+        data = json.loads(request_data)
+    except json.JSONDecodeError:
+        return "Error: Invalid JSON format. Please ensure request_data is a valid JSON string."
+
+    # extraction for search
+    req_body = data.get("request", {})
+    query_text = (
+        f"Language: {req_body.get('language', '')} "
+        f"Framework: {req_body.get('framework', '')} "
+        f"Pattern: {req_body.get('design_context', {}).get('pattern', '')} "
+        f"Feature: {req_body.get('content', {}).get('feature_details', '')} "
+        f"Input: {req_body.get('reproduction', {}).get('input_sample', '')}"
+    )
+
+    # 1. Search for existing experiences
+    # We always search to provide context
+    similar_exps = _state.experience_store.search_experience(query_text, limit=3)
+    
+    context_str = "Found similar past experiences:\n"
+    for i, exp in enumerate(similar_exps):
+        props = exp.get("properties", {})
+        context_str += (
+            f"\n--- Experience {i+1} (Distance: {exp.get('distance', 'N/A')}) ---\n"
+            f"Language: {props.get('language')}\n"
+            f"Pattern: {props.get('pattern')}\n"
+            f"Code Result: {props.get('code_result')}\n"
+            f"Success: {props.get('success')}\n"
+        )
+
+    # 2. Reasoning with Gemini
+    prompt = (
+        f"You are an expert software engineer assistant.\n"
+        f"Analyze the following request and the provided past experiences.\n"
+        f"If the user is reporting a success/failure, verify it and summarize the learning.\n"
+        f"If the user is asking for help, use the past experiences to provide the best code pattern.\n\n"
+        f"CURRENT REQUEST:\n{json.dumps(req_body, indent=2)}\n\n"
+        f"PAST EXPERIENCES:\n{context_str}\n\n"
+        f"Provide a helpful response, including code examples if applicable."
+    )
+
+    response = await _state.rag_client.generate_content(prompt)
+
+    # 3. Learning (Store) if this is a report with a result
+    learning_msg = ""
+    result_val = req_body.get("content", {}).get("result")
+    code_val = req_body.get("content", {}).get("code")
+    
+    # Simple heuristic: if we have a result status (SUCCESS/FAILED) or code content, we treat it as an experience to learn
+    if result_val or code_val:
+        try:
+            uuid_id = _state.experience_store.add_experience(data)
+            learning_msg = f"\n\n[System] New experience learned/recorded! (ID: {uuid_id})"
+        except Exception as e:
+            learning_msg = f"\n\n[System] Failed to record experience: {e}"
+
+    return response + learning_msg

@@ -7,12 +7,14 @@ requires-python = ">=3.13"
 dependencies = [
     "fastmcp>=2.14.1",
     "google-genai>=1.56.0",
+    "ollama>=0.6.1",
     "python-dotenv>=1.2.1",
+    "weaviate-client>=4.19.0",
 ]
 
 [project.scripts]
-agent-rag-mcp = "agent_rag_mcp:main"
-agent-rag-client = "agent_rag_mcp.client:main"
+agent-rag-mcp = "agent_rag_mcp.server.main:main"
+agent-rag-client = "agent_rag_mcp.client.main:main"
 
 [dependency-groups]
 dev = [

@@ -36,6 +36,11 @@ class Config:
     # Authentication
     auth_token: str | None
 
+    # Dynamic Learning RAG
+    weaviate_url: str
+    ollama_host: str
+    ollama_model: str
+
     @property
     def is_auth_enabled(self) -> bool:
         """Check if authentication is enabled."""
@@ -69,6 +74,10 @@ def get_config() -> Config:
         in ("true", "1", "yes"),
         # Authentication
         auth_token=os.getenv("AUTH_TOKEN"),
+        # Dynamic Learning RAG
+        weaviate_url=os.getenv("WEAVIATE_URL", "http://localhost:8080"),
+        ollama_host=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
+        ollama_model=os.getenv("OLLAMA_MODEL", "qwen2.5-coder:latest"),
     )
 
 

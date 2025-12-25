@@ -1,0 +1,59 @@
+services:
+  weaviate:
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8080'
+      - --scheme
+      - http
+    image: semitechnologies/weaviate:1.26.1
+    ports:
+      - 8080:8080
+      - 50051:50051
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    restart: on-failure:0
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      DEFAULT_VECTORIZER_MODULE: 'none'
+      ENABLE_MODULES: ''
+      CLUSTER_HOSTNAME: 'node1'
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - 11434:11434
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    # Optional: Enable GPU support if available on host
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  agent-rag-mcp:
+    build: .
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - WEAVIATE_URL=http://weaviate:8080
+      - OLLAMA_HOST=http://ollama:11434
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      - weaviate
+      - ollama 
+    # This service is mainly for testing connectivity within the network.
+    # In normal FastMCP usage, you might run the server locally on the host.
+
+volumes:
+  weaviate_data:
+  ollama_data:

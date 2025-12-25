@@ -1,5 +1,8 @@
-# gemini_rag.py
-"""Gemini File Search RAG client for document queries."""
+# gemini.py
+"""Unified Gemini Client for Agent RAG MCP.
+
+Handles both standard content generation and File Search RAG operations.
+"""
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -9,11 +12,11 @@ from pathlib import Path
 from google import genai
 from google.genai import types
 
-from agent_rag_mcp.config import get_config
+from agent_rag_mcp.core.config import get_config
 
 
-class GeminiRAGClient:
-    """Client for Gemini File Search RAG operations."""
+class GeminiClient:
+    """Unified client for Gemini operations."""
 
     def __init__(self, api_key: str | None = None) -> None:
         """Initialize the Gemini client.
@@ -30,17 +33,54 @@ class GeminiRAGClient:
         self.file_search_store_name: str | None = None
         self._executor = ThreadPoolExecutor(max_workers=4)
 
-    def _sync_find_store(self, store_display_name: str) -> tuple[str | None, bool]:
-        """Synchronous helper to find existing store.
+    # ==============================================================================
+    # Standard Generation
+    # ==============================================================================
+    async def generate_content(
+        self,
+        prompt: str,
+        model: str = "gemini-2.0-flash-lite-preview-02-05",  # Using latest efficient model
+        temperature: float = 0.7,
+    ) -> str:
+        """Generate content using Gemini.
+
+        Args:
+            prompt: The input prompt
+            model: Model to use
+            temperature: Generation temperature
 
         Returns:
-            Tuple of (store_name, has_files) - store_name is None if not found
+            Generated text content
         """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self._executor,
+            partial(
+                self._sync_generate,
+                prompt=prompt,
+                model=model,
+                temperature=temperature,
+            ),
+        )
+
+    def _sync_generate(
+        self, prompt: str, model: str, temperature: float
+    ) -> str:
+        """Synchronous helper for content generation."""
+        response = self.client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(temperature=temperature),
+        )
+        return response.text or ""
+
+    # ==============================================================================
+    # File Search / Document RAG
+    # ==============================================================================
+    def _sync_find_store(self, store_display_name: str) -> tuple[str | None, bool]:
+        """Synchronous helper to find existing store."""
         for store in self.client.file_search_stores.list():
             if store.display_name == store_display_name:
-                # Check if store has files (store object may have file count)
-                # Note: The API may not expose file count directly, so we assume
-                # if the store exists, it has files
                 return store.name, True
         return None, False
 
@@ -52,14 +92,7 @@ class GeminiRAGClient:
         return store.name
 
     async def check_store_exists(self, store_display_name: str) -> tuple[str | None, bool]:
-        """Check if a store with the given name already exists.
-
-        Args:
-            store_display_name: Display name for the store
-
-        Returns:
-            Tuple of (store_name, exists) - store_name is None if not found
-        """
+        """Check if a store with the given name already exists."""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             self._executor,
@@ -67,21 +100,12 @@ class GeminiRAGClient:
         )
 
     async def get_or_create_store(self, store_display_name: str) -> str:
-        """Get existing store or create new one.
-
-        Args:
-            store_display_name: Display name for the store
-
-        Returns:
-            The file search store name
-        """
-        # First check if store exists
+        """Get existing store or create new one."""
         existing_name, exists = await self.check_store_exists(store_display_name)
         if exists and existing_name:
             self.file_search_store_name = existing_name
             return existing_name
 
-        # Create new store
         loop = asyncio.get_event_loop()
         store_name = await loop.run_in_executor(
             self._executor,
@@ -103,7 +127,6 @@ class GeminiRAGClient:
             config={"display_name": file_path.name},
         )
 
-        # Wait for upload to complete
         while not operation.done:
             time.sleep(2)
             operation = self.client.operations.get(operation)
@@ -116,16 +139,7 @@ class GeminiRAGClient:
         store_name: str | None = None,
         progress_callback: object | None = None,
     ) -> list[str]:
-        """Upload documents to the file search store.
-
-        Args:
-            files: List of file paths to upload
-            store_name: Optional store name. Uses instance store if not provided.
-            progress_callback: Optional callback(current, total, filename) for progress
-
-        Returns:
-            List of uploaded file names
-        """
+        """Upload documents to the file search store."""
         target_store = store_name or self.file_search_store_name
         if not target_store:
             raise ValueError("No file search store configured")
@@ -147,13 +161,13 @@ class GeminiRAGClient:
 
         return uploaded_files
 
-    def _sync_query(
+    def _sync_query_docs(
         self,
         question: str,
         target_store: str,
         model: str,
     ) -> str:
-        """Synchronous helper for query."""
+        """Synchronous helper for document query."""
         response = self.client.models.generate_content(
             model=model,
             contents=question,
@@ -169,7 +183,7 @@ class GeminiRAGClient:
         )
         return response.text or "No answer found in the documents."
 
-    async def query(
+    async def query_docs(
         self,
         question: str,
         store_name: str | None = None,
@@ -180,7 +194,7 @@ class GeminiRAGClient:
         Args:
             question: The question to ask
             store_name: Optional store name. Uses instance store if not provided.
-            model: Model to use for generation
+            model: Model to use for generation (default: gemini-2.5-flash for RAG)
 
         Returns:
             Generated answer based on document context
@@ -192,21 +206,8 @@ class GeminiRAGClient:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             self._executor,
-            partial(self._sync_query, question, target_store, model),
+            partial(self._sync_query_docs, question, target_store, model),
         )
-
-    async def list_store_files(self, store_name: str | None = None) -> list[str]:
-        """List files in the store.
-
-        Args:
-            store_name: Optional store name. Uses instance store if not provided.
-
-        Returns:
-            List of file display names in the store
-        """
-        # Note: The API may not have a direct method to list files in a store
-        # This is a placeholder for future implementation
-        return []
 
     def _sync_delete_store(self, target_store: str, force: bool) -> bool:
         """Synchronous helper for delete."""
@@ -219,15 +220,7 @@ class GeminiRAGClient:
     async def delete_store(
         self, store_name: str | None = None, force: bool = False
     ) -> bool:
-        """Delete a file search store.
-
-        Args:
-            store_name: Optional store name. Uses instance store if not provided.
-            force: If True, delete even if store contains files
-
-        Returns:
-            True if deletion was successful
-        """
+        """Delete a file search store."""
         target_store = store_name or self.file_search_store_name
         if not target_store:
             raise ValueError("No file search store to delete")

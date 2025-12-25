@@ -1,0 +1,73 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-data-pvc
+  namespace: argocd-prod
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: nfs-standard #環境に応じて変更
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-rag-mcp-ollama
+  namespace: argocd-prod
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: agent-rag-mcp-ollama
+  template:
+    metadata:
+      labels:
+        app: agent-rag-mcp-ollama
+    spec:
+      imagePullSecrets:
+      - name: ghcr-registry-secret
+      containers:
+      # Ollama sidecar container
+      - name: ollama
+        image: ollama/ollama:latest
+        ports:
+        - containerPort: 11434
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        volumeMounts:
+        - name: ollama-data
+          mountPath: /root/.ollama
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          ollama serve
+        env:
+        - name: OLLAMA_KEEP_ALIVE #アンロード防止
+          value: "-1"
+      volumes:
+        - name: ollama-data
+          persistentVolumeClaim:
+            claimName: ollama-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-rag-mcp-ollama-lb
+  namespace: argocd-prod
+spec:
+  selector:
+    app: agent-rag-mcp-ollama
+  ports:
+  - port: 11434
+    targetPort: 11434
+  type: ClusterIP

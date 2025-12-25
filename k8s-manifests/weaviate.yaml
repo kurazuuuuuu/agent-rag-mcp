@@ -1,0 +1,74 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: weaviate-data-pvc
+  namespace: argocd-prod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: nfs-standard
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-rag-mcp-weaviate
+  namespace: argocd-prod
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: agent-rag-mcp-weaviate
+  template:
+    metadata:
+      labels:
+        app: agent-rag-mcp-weaviate
+    spec:
+      containers:
+        - name: weaviate
+          image: semitechnologies/weaviate:1.26.1
+          ports:
+            - containerPort: 8080
+            - containerPort: 50051
+          env:
+            - name: QUERY_DEFAULTS_LIMIT
+              value: "25"
+            - name: AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED
+              value: "true"
+            - name: PERSISTENCE_DATA_PATH
+              value: "/var/lib/weaviate"
+            - name: DEFAULT_VECTORIZER_MODULE
+              value: "none"
+            - name: ENABLE_MODULES
+              value: ""
+            - name: CLUSTER_HOSTNAME
+              value: "node1"
+          volumeMounts:
+            - name: weaviate-data
+              mountPath: /var/lib/weaviate
+      volumes:
+        - name: weaviate-data
+          persistentVolumeClaim:
+            claimName: weaviate-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-rag-mcp-weaviate-lb
+  namespace: argocd-prod
+spec:
+  selector:
+    app: agent-rag-mcp-weaviate
+  ports:
+    - port: 8080
+      name: http
+      targetPort: 8080
+    - port: 50051
+      name: grpc
+      targetPort: 50051
+  type: ClusterIP

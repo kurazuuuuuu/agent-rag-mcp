@@ -1,0 +1,69 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-rag-mcp-fastmcp
+  namespace: argocd-prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-rag-mcp-fastmcp
+  template:
+    metadata:
+      labels:
+        app: agent-rag-mcp-fastmcp
+    spec:
+      imagePullSecrets:
+        - name: ghcr-registry-secret
+      containers:
+        - name: agent-rag-mcp-fastmcp
+          image: ghcr.io/kurazuuuuuu/agent-rag-mcp-fastmcp:latest
+          imagePullPolicy: Always
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1024Mi"
+              cpu: "500m"
+          env:
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-rag-mcp-secrets
+                  key: gemini-api-key
+            - name: RAG_REPO_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agent-rag-mcp-secrets
+                  key: rag-repo-url
+            - name: RAG_DOCS_PATH
+              valueFrom:
+                secretKeyRef:
+                  name: agent-rag-mcp-secrets
+                  key: rag-docs-path
+            - name: RAG_BRANCH
+              valueFrom:
+                secretKeyRef:
+                  name: agent-rag-mcp-secrets
+                  key: rag-branch
+            - name: RAG_STORE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: agent-rag-mcp-secrets
+                  key: rag-store-name
+            - name: RAG_FORCE_REINDEX
+              valueFrom:
+                secretKeyRef:
+                  name: agent-rag-mcp-secrets
+                  key: rag-force-reindex
+            - name: AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agent-rag-mcp-secrets
+                  key: auth-token
+            - name: WEAVIATE_URL
+              value: "http://agent-rag-mcp-weaviate-lb:8080"
+            - name: OLLAMA_HOST
+              value: "http://agent-rag-mcp-ollama-lb:11434"

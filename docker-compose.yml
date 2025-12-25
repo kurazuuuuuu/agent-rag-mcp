@@ -38,7 +38,7 @@ services:
     #           count: 1
     #           capabilities: [gpu]
 
-  agent-rag-mcp:
+  fastmcp:
     build: .
     volumes:
       - .:/app

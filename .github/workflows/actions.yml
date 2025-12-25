@@ -1,0 +1,42 @@
+name: CI
+on:
+    push: 
+        branches: [main]
+        tags: ['v*']
+        paths-ignore:
+        - 'k8s-manifests/**'
+        - '**.md'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+    build-fastmcp:
+        runs-on: ci-agent-rag-mcp
+        steps:
+        - name: Checkout code
+          uses: actions/checkout@v4
+        
+        - name: Login to GitHub Container Registry
+          run: |
+            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+        - name: Docker meta
+          id: meta
+          uses: docker/metadata-action@v5
+          with:
+            images: ghcr.io/${{ github.repository }}-frontend
+            tags: |
+              type=ref,event=branch
+              type=ref,event=pr
+              type=semver,pattern={{version}}
+              type=sha
+
+        - name: Build and push frontend image
+          uses: docker/build-push-action@v5
+          with:
+            context: .
+            push: true
+            tags: ${{ steps.meta.outputs.tags }}
+            labels: ${{ steps.meta.outputs.labels }}

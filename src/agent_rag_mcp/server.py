@@ -1,12 +1,14 @@
 # server.py
 """FastMCP server for Agent RAG MCP."""
 
+import asyncio
 import os
 import re
 import shutil
-import subprocess
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import AsyncIterator
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -17,37 +19,30 @@ from agent_rag_mcp.gemini_rag import GeminiRAGClient
 # Load environment variables from .env file (override existing)
 load_dotenv(override=True)
 
-mcp = FastMCP(
-    name="AgentRAG-MCP",
-    instructions="""
-        This server provides "Retrieval-Augmented Generation" tools for AI agents.
-        It enables you to:
-        - Ask questions about project documentation
-        - Learn from code patterns (success/error)
-        - Query best practices for implementation
-
-        The server supports continuous learning. Share your experiences!
-    """,
-)
-
-# Initialize Gemini RAG client (lazy loading)
-_rag_client: GeminiRAGClient | None = None
-
-# Store name -> store ID mapping
-_store_cache: dict[str, str] = {}
-
 # Supported file extensions for documentation
 SUPPORTED_EXTENSIONS = ["*.md", "*.txt", "*.rst", "*.json", "*.yaml", "*.yml"]
 
 
-def get_rag_client() -> GeminiRAGClient:
-    """Get or initialize the RAG client."""
-    global _rag_client
-    if _rag_client is None:
-        _rag_client = GeminiRAGClient()
-    return _rag_client
+# ==============================================================================
+# Configuration from Environment Variables
+# ==============================================================================
+def get_config() -> dict:
+    """Get configuration from environment variables."""
+    return {
+        # Repository configuration (for git clone mode)
+        "repo_url": os.getenv("RAG_REPO_URL"),
+        "docs_path": os.getenv("RAG_DOCS_PATH", "Docs"),
+        "branch": os.getenv("RAG_BRANCH", "main"),
+        # Local path configuration (alternative to git clone)
+        "local_docs_path": os.getenv("RAG_LOCAL_DOCS_PATH"),
+        # Store name (auto-generated if not provided)
+        "store_name": os.getenv("RAG_STORE_NAME"),
+    }
 
 
+# ==============================================================================
+# Helper Functions
+# ==============================================================================
 def generate_store_name_from_url(repo_url: str) -> str:
     """Generate a store name from a repository URL.
 
@@ -104,8 +99,209 @@ def generate_store_name_from_path(local_path: str) -> str:
     return store_name or "local-docs"
 
 
+async def init_store_from_repo(
+    client: GeminiRAGClient,
+    repo_url: str,
+    docs_path: str,
+    branch: str,
+    store_name: str | None,
+) -> tuple[str, str, list[str]]:
+    """Clone a repository and upload documentation to the RAG store.
+
+    Returns:
+        Tuple of (display_name, store_id, uploaded_files)
+    """
+    display_name = store_name or generate_store_name_from_url(repo_url)
+    store_id = await client.get_or_create_store(display_name)
+
+    temp_dir = tempfile.mkdtemp(prefix="agent-rag-")
+
+    try:
+        # Clone repository using async subprocess
+        process = await asyncio.create_subprocess_exec(
+            "git", "clone", "--depth", "1", "--branch", branch, repo_url, temp_dir,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+        except asyncio.TimeoutError:
+            process.kill()
+            raise RuntimeError("Git clone timed out after 120 seconds")
+
+        if process.returncode != 0:
+            raise RuntimeError(f"Git clone failed: {stderr.decode()}")
+
+        # Find docs directory
+        docs_full_path = Path(temp_dir) / docs_path
+        if not docs_full_path.exists():
+            raise FileNotFoundError(f"Docs path not found: {docs_path}")
+
+        # Collect all documentation files
+        files_to_upload: list[Path] = []
+        for ext in SUPPORTED_EXTENSIONS:
+            files_to_upload.extend(docs_full_path.rglob(ext))
+
+        if not files_to_upload:
+            raise FileNotFoundError(f"No documentation files found in {docs_path}")
+
+        # Progress callback
+        def progress(current: int, total: int, filename: str) -> None:
+            print(f"   📄 [{current}/{total}] {filename}")
+
+        # Upload files
+        print(f"   Uploading {len(files_to_upload)} files...")
+        uploaded = await client.upload_documents(
+            files_to_upload, store_name=store_id, progress_callback=progress
+        )
+
+        return display_name, store_id, uploaded
+
+    finally:
+        # Clean up temporary directory
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+
+
+async def init_store_from_local(
+    client: GeminiRAGClient,
+    local_docs_path: str,
+    store_name: str | None,
+) -> tuple[str, str, list[str]]:
+    """Initialize store from local documentation directory.
+
+    Returns:
+        Tuple of (display_name, store_id, uploaded_files)
+    """
+    display_name = store_name or generate_store_name_from_path(local_docs_path)
+    store_id = await client.get_or_create_store(display_name)
+
+    docs_path = Path(local_docs_path)
+    if not docs_path.exists():
+        raise FileNotFoundError(f"Directory not found: {local_docs_path}")
+
+    # Collect all documentation files
+    files_to_upload: list[Path] = []
+    for ext in SUPPORTED_EXTENSIONS:
+        files_to_upload.extend(docs_path.rglob(ext))
+
+    if not files_to_upload:
+        raise FileNotFoundError(f"No documentation files found in {local_docs_path}")
+
+    # Progress callback
+    def progress(current: int, total: int, filename: str) -> None:
+        print(f"   📄 [{current}/{total}] {filename}")
+
+    # Upload files
+    print(f"   Uploading {len(files_to_upload)} files...")
+    uploaded = await client.upload_documents(
+        files_to_upload, store_name=store_id, progress_callback=progress
+    )
+
+    return display_name, store_id, uploaded
+
+
+# ==============================================================================
+# Server State (populated during startup)
+# ==============================================================================
+class ServerState:
+    """Global server state, initialized during lifespan startup."""
+
+    rag_client: GeminiRAGClient | None = None
+    store_name: str | None = None
+    store_id: str | None = None
+
+
+_state = ServerState()
+
+
+# ==============================================================================
+# Lifespan: Initialize Document Store on Startup
+# ==============================================================================
+@asynccontextmanager
+async def lifespan(app: FastMCP) -> AsyncIterator[None]:
+    """Initialize the document store when the server starts."""
+    config = get_config()
+
+    # Check if we have required configuration
+    repo_url = config["repo_url"]
+    local_docs_path = config["local_docs_path"]
+
+    if not repo_url and not local_docs_path:
+        print("⚠️  No document source configured.")
+        print("   Set RAG_REPO_URL or RAG_LOCAL_DOCS_PATH environment variable.")
+        print("   Server will start without document store.")
+        yield
+        return
+
+    # Initialize RAG client
+    print("🔧 Initializing Gemini RAG client...")
+    _state.rag_client = GeminiRAGClient()
+
+    try:
+        if repo_url:
+            # Initialize from git repository
+            print(f"📦 Cloning repository: {repo_url}")
+            print(f"   Branch: {config['branch']}, Docs path: {config['docs_path']}")
+
+            display_name, store_id, uploaded = await init_store_from_repo(
+                _state.rag_client,
+                repo_url,
+                config["docs_path"],
+                config["branch"],
+                config["store_name"],
+            )
+        else:
+            # Initialize from local path
+            print(f"📂 Loading local docs: {local_docs_path}")
+
+            display_name, store_id, uploaded = await init_store_from_local(
+                _state.rag_client,
+                local_docs_path,
+                config["store_name"],
+            )
+
+        _state.store_name = display_name
+        _state.store_id = store_id
+
+        print(f"✅ Document store '{display_name}' ready!")
+        print(f"   Indexed {len(uploaded)} files")
+
+    except Exception as e:
+        print(f"❌ Failed to initialize document store: {e}")
+        print("   Server will start without document store.")
+        _state.rag_client = None
+
+    yield
+
+    # Cleanup on shutdown
+    print("👋 Server shutting down...")
+
+
+# ==============================================================================
+# FastMCP Server
+# ==============================================================================
+mcp = FastMCP(
+    name="AgentRAG-MCP",
+    instructions="""
+        This server provides "Retrieval-Augmented Generation" tools for AI agents.
+        It enables you to:
+        - Ask questions about project documentation
+
+        Use the ask_project_document tool to get answers based on the indexed documentation.
+        The server uses semantic search to find relevant information and generates
+        accurate answers grounded in the actual documents.
+    """,
+    lifespan=lifespan,
+)
+
+
+# ==============================================================================
+# MCP Tools
+# ==============================================================================
 @mcp.tool
-async def ask_project_document(question: str, store_name: str | None = None) -> str:
+async def ask_project_document(question: str) -> str:
     """Ask questions about the project documentation.
 
     Use this tool to get answers based on the project's documentation.
@@ -115,165 +311,30 @@ async def ask_project_document(question: str, store_name: str | None = None) -> 
     Args:
         question: Your question about the project documentation.
                   Be specific for better results.
-        store_name: Optional store name to query. If not provided,
-                    uses the most recently created store.
 
     Returns:
         Answer generated from the project documentation with citations.
     """
-    client = get_rag_client()
-
-    # Use provided store name or get from cache
-    if store_name and store_name in _store_cache:
-        target_store = _store_cache[store_name]
-    elif _store_cache:
-        # Use the most recently added store
-        target_store = list(_store_cache.values())[-1]
-    else:
-        return "Error: No document store has been set up. Use setup_document_store_from_repo first."
+    if _state.rag_client is None or _state.store_id is None:
+        return (
+            "Error: Document store is not initialized. "
+            "Please configure RAG_REPO_URL or RAG_LOCAL_DOCS_PATH environment variable "
+            "and restart the server."
+        )
 
     # Query the documents
-    answer = await client.query(question, store_name=target_store)
+    answer = await _state.rag_client.query(question, store_name=_state.store_id)
     return answer
 
 
 @mcp.tool
-async def list_document_stores() -> str:
-    """List all available document stores.
+async def get_store_info() -> str:
+    """Get information about the current document store.
 
     Returns:
-        List of store names that have been set up in this session.
+        Information about the initialized document store.
     """
-    if not _store_cache:
-        return "No document stores have been set up yet."
+    if _state.store_name is None:
+        return "No document store is currently initialized."
 
-    stores = "\n".join(f"- {name}" for name in _store_cache)
-    return f"Available document stores:\n{stores}"
-
-
-@mcp.tool
-async def setup_document_store_from_repo(
-    repo_url: str,
-    docs_path: str = "Docs",
-    branch: str = "main",
-    store_name: str | None = None,
-) -> str:
-    """Clone a repository and upload documentation to the RAG store.
-
-    This tool clones a Git repository to a temporary directory,
-    uploads documentation files, and then cleans up the temporary files.
-    The store name is automatically generated from the repository URL.
-
-    Args:
-        repo_url: Git repository URL (e.g., "https://github.com/user/repo")
-        docs_path: Path to docs directory within the repo (default: "Docs")
-        branch: Git branch to clone (default: "main")
-        store_name: Optional custom store name. If not provided,
-                    generated from repo URL.
-
-    Returns:
-        Status message with list of uploaded files
-    """
-    client = get_rag_client()
-
-    # Generate or use provided store name
-    display_name = store_name or generate_store_name_from_url(repo_url)
-
-    # Get or create the store
-    store_id = await client.get_or_create_store(display_name)
-    _store_cache[display_name] = store_id
-
-    # Create temporary directory
-    temp_dir = tempfile.mkdtemp(prefix="agent-rag-")
-
-    try:
-        # Clone repository
-        clone_result = subprocess.run(
-            ["git", "clone", "--depth", "1", "--branch", branch, repo_url, temp_dir],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-
-        if clone_result.returncode != 0:
-            return f"Error cloning repository: {clone_result.stderr}"
-
-        # Find docs directory
-        docs_full_path = Path(temp_dir) / docs_path
-        if not docs_full_path.exists():
-            return f"Error: Docs path not found: {docs_path}"
-
-        # Collect all documentation files
-        files_to_upload: list[Path] = []
-        for ext in SUPPORTED_EXTENSIONS:
-            files_to_upload.extend(docs_full_path.rglob(ext))
-
-        if not files_to_upload:
-            return f"No documentation files found in {docs_path}"
-
-        # Upload files
-        uploaded = await client.upload_documents(files_to_upload, store_name=store_id)
-
-        return (
-            f"Successfully created store '{display_name}' and uploaded {len(uploaded)} files:\n"
-            + "\n".join(f"- {f}" for f in uploaded)
-        )
-
-    except subprocess.TimeoutExpired:
-        return "Error: Git clone timed out after 120 seconds"
-    except Exception as e:
-        return f"Error: {e!s}"
-    finally:
-        # Clean up temporary directory
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
-
-
-@mcp.tool
-async def setup_document_store(
-    repo_docs_path: str,
-    store_name: str | None = None,
-) -> str:
-    """Initialize or update the document store with local documentation.
-
-    This tool sets up the RAG store by uploading documentation files
-    from a local directory. The store name is automatically generated
-    from the directory path.
-
-    Args:
-        repo_docs_path: Path to the docs directory (e.g., "/path/to/repo/Docs")
-        store_name: Optional custom store name. If not provided,
-                    generated from directory path.
-
-    Returns:
-        Status message with list of uploaded files
-    """
-    client = get_rag_client()
-
-    # Generate or use provided store name
-    display_name = store_name or generate_store_name_from_path(repo_docs_path)
-
-    # Get or create the store
-    store_id = await client.get_or_create_store(display_name)
-    _store_cache[display_name] = store_id
-
-    # Find all markdown files in the docs directory
-    docs_path = Path(repo_docs_path)
-    if not docs_path.exists():
-        return f"Error: Directory not found: {repo_docs_path}"
-
-    # Collect all documentation files
-    files_to_upload: list[Path] = []
-    for ext in SUPPORTED_EXTENSIONS:
-        files_to_upload.extend(docs_path.rglob(ext))
-
-    if not files_to_upload:
-        return f"No documentation files found in {repo_docs_path}"
-
-    # Upload files
-    uploaded = await client.upload_documents(files_to_upload, store_name=store_id)
-
-    return (
-        f"Successfully created store '{display_name}' and uploaded {len(uploaded)} files:\n"
-        + "\n".join(f"- {f}" for f in uploaded)
-    )
+    return f"Document Store: {_state.store_name}\nStore ID: {_state.store_id}"

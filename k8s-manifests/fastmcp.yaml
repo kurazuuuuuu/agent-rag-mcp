@@ -54,10 +54,7 @@ spec:
                   name: agent-rag-mcp-secrets
                   key: rag-store-name
             - name: RAG_FORCE_REINDEX
-              valueFrom:
-                secretKeyRef:
-                  name: agent-rag-mcp-secrets
-                  key: rag-force-reindex
+              value: false
             - name: AUTH_TOKEN
               valueFrom:
                 secretKeyRef:

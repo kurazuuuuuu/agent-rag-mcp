@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: weaviate-data-pvc
+  name: agent-rag-mcp-weaviate-data-pvc
   namespace: argocd-prod
 spec:
   accessModes:

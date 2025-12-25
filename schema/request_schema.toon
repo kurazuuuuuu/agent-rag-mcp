@@ -1,0 +1,23 @@
+request:
+  language: Language Name
+  framework: Framework Name
+  dependencies:
+    major_lib_name: x.x.x
+  metrics:
+    execution_time_ms: 150
+    memory_usage_mb: 256
+    complexity_algo: O(n^2)
+  reproduction:
+    input_sample: "{ 'id': null }"
+    preconditions: User is not logged in
+  design_context:
+    pattern: Repository Pattern
+    role: Middleware
+  content:
+    result: SUCCESS or FAILED
+    feature_details: ...
+    code:
+      "success": |
+        ...
+      "failed": | 
+        ...

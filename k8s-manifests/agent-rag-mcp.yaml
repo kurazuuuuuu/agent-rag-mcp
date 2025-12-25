@@ -2,7 +2,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: fairy
+  name: agent-rag-mcp
   namespace: argocd
   annotations:
     argocd-image-updater.argoproj.io/image-list: fastmcp=ghcr.io/kurazuuuuuu/agent-rag-mcp-fastmcp

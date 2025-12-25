@@ -82,7 +82,7 @@ class GeminiRAGClient:
         self,
         files: list[Path],
         store_name: str | None = None,
-        progress_callback: callable | None = None,
+        progress_callback: object | None = None,
     ) -> list[str]:
         """Upload documents to the file search store.
 

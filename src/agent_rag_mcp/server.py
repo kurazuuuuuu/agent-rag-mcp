@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from fastmcp import FastMCP
+from fastmcp.server.auth.providers.debug import DebugTokenVerifier
 
 from agent_rag_mcp.gemini_rag import GeminiRAGClient
 
@@ -37,7 +38,29 @@ def get_config() -> dict:
         "local_docs_path": os.getenv("RAG_LOCAL_DOCS_PATH"),
         # Store name (auto-generated if not provided)
         "store_name": os.getenv("RAG_STORE_NAME"),
+        # Authentication (optional)
+        "auth_token": os.getenv("AUTH_TOKEN"),
     }
+
+
+def get_auth_provider() -> DebugTokenVerifier | None:
+    """Get authentication provider if AUTH_TOKEN is configured.
+
+    Returns:
+        DebugTokenVerifier if AUTH_TOKEN is set, None otherwise.
+    """
+    auth_token = os.getenv("AUTH_TOKEN")
+    if not auth_token:
+        return None
+
+    # Create a simple token validator that checks against the configured token
+    def validate_token(token: str) -> bool:
+        return token == auth_token
+
+    return DebugTokenVerifier(
+        validate=validate_token,
+        client_id="agent-rag-client",
+    )
 
 
 # ==============================================================================
@@ -224,6 +247,12 @@ async def lifespan(app: FastMCP) -> AsyncIterator[None]:
     """Initialize the document store when the server starts."""
     config = get_config()
 
+    # Show auth status
+    if config.get("auth_token"):
+        print("🔐 Authentication enabled (AUTH_TOKEN is set)")
+    else:
+        print("⚠️  Authentication disabled (set AUTH_TOKEN to enable)")
+
     # Check if we have required configuration
     repo_url = config["repo_url"]
     local_docs_path = config["local_docs_path"]
@@ -282,6 +311,9 @@ async def lifespan(app: FastMCP) -> AsyncIterator[None]:
 # ==============================================================================
 # FastMCP Server
 # ==============================================================================
+# Get auth provider (None if AUTH_TOKEN not set)
+_auth_provider = get_auth_provider()
+
 mcp = FastMCP(
     name="AgentRAG-MCP",
     instructions="""
@@ -294,6 +326,7 @@ mcp = FastMCP(
         accurate answers grounded in the actual documents.
     """,
     lifespan=lifespan,
+    auth=_auth_provider,
 )
 
 

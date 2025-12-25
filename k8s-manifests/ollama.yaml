@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: ollama-data-pvc
+  name: agent-rag-mcp-ollama-data-pvc
   namespace: argocd-prod
 spec:
   accessModes:

@@ -4,10 +4,10 @@
       "command": "/opt/homebrew/bin/uvx",
       "args": [
         "--from",
-        "git+https://github.com/kanaha/agent-rag-mcp",
+        "git+https://github.com/kurazuuuuuu/agent-rag-mcp",
         "agent-rag-client",
         "--server-url",
-        "http://127.0.0.1:8000/sse"
+        "http://127.0.0.1:8000/mcp"
       ]
     }
   }

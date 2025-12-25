@@ -16,8 +16,8 @@ def main() -> None:
     parser.add_argument(
         "--server-url",
         "-s",
-        default=os.getenv("MCP_SERVER_URL", "http://127.0.0.1:8000/sse"),
-        help="Remote MCP server URL (default: http://127.0.0.1:8000/sse)",
+        default=os.getenv("MCP_SERVER_URL", "http://127.0.0.1:8000/mcp"),
+        help="Remote MCP server URL (default: http://127.0.0.1:8000/mcp)",
     )
     parser.add_argument(
         "--token",

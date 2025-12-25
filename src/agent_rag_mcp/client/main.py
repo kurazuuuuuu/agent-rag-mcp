@@ -32,7 +32,7 @@ def main() -> None:
     
     try:
         # Create client for remote server
-        client = Client(args.server_url, token=args.token)
+        client = Client(args.server_url, auth=args.token)
 
         # Create proxy that exposes remote server via stdio
         proxy = FastMCP.as_proxy(client)

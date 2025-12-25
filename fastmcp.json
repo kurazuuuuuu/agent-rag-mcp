@@ -1,0 +1,19 @@
+{
+    "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
+    "source": {
+        "type": "filesystem",
+        "path": "src/agent_rag_mcp/server.py",
+        "entrypoint": "mcp"
+    },
+    "environment": {
+        "type": "uv",
+        "project": "."
+    },
+    "deployment": {
+        "transport": "sse",
+        "log_level": "INFO",
+        "env": {
+            "GEMINI_API_KEY": "${GEMINI_API_KEY}"
+        }
+    }
+}

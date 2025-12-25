@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "agent-rag": {
+      "command": "/opt/homebrew/bin/uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/kanaha/agent-rag-mcp",
+        "agent-rag-client",
+        "--server-url",
+        "http://127.0.0.1:8000/sse"
+      ]
+    }
+  }
+}

@@ -3,7 +3,7 @@
 
 import argparse
 
-from .server import mcp
+from agent_rag_mcp.server import mcp
 
 
 def main() -> None:

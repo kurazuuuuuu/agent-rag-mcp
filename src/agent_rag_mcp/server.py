@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 
-from .gemini_rag import GeminiRAGClient
+from agent_rag_mcp.gemini_rag import GeminiRAGClient
 
 # Load environment variables from .env file (override existing)
 load_dotenv(override=True)

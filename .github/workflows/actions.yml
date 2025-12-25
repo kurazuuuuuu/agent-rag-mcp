@@ -6,6 +6,7 @@ on:
         paths-ignore:
         - 'k8s-manifests/**'
         - '**.md'
+        - 'src/agent_rag_mcp/client/**'
 
 permissions:
   contents: read

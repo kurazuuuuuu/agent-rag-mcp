@@ -2,7 +2,6 @@
 """FastMCP server for Agent RAG MCP."""
 
 import asyncio
-import os
 import re
 import shutil
 import tempfile
@@ -11,51 +10,32 @@ from pathlib import Path
 from typing import AsyncIterator
 from urllib.parse import urlparse
 
-from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.debug import DebugTokenVerifier
 
+from agent_rag_mcp.config import get_config
 from agent_rag_mcp.gemini_rag import GeminiRAGClient
-
-# Load environment variables from .env file (override existing)
-load_dotenv(override=True)
 
 # Supported file extensions for documentation
 SUPPORTED_EXTENSIONS = ["*.md", "*.txt", "*.rst", "*.json", "*.yaml", "*.yml"]
 
 
 # ==============================================================================
-# Configuration from Environment Variables
+# Authentication Provider
 # ==============================================================================
-def get_config() -> dict:
-    """Get configuration from environment variables."""
-    return {
-        # Repository configuration (for git clone mode)
-        "repo_url": os.getenv("RAG_REPO_URL"),
-        "docs_path": os.getenv("RAG_DOCS_PATH", "Docs"),
-        "branch": os.getenv("RAG_BRANCH", "main"),
-        # Local path configuration (alternative to git clone)
-        "local_docs_path": os.getenv("RAG_LOCAL_DOCS_PATH"),
-        # Store name (auto-generated if not provided)
-        "store_name": os.getenv("RAG_STORE_NAME"),
-        # Authentication (optional)
-        "auth_token": os.getenv("AUTH_TOKEN"),
-    }
-
-
 def get_auth_provider() -> DebugTokenVerifier | None:
     """Get authentication provider if AUTH_TOKEN is configured.
 
     Returns:
         DebugTokenVerifier if AUTH_TOKEN is set, None otherwise.
     """
-    auth_token = os.getenv("AUTH_TOKEN")
-    if not auth_token:
+    config = get_config()
+    if not config.auth_token:
         return None
 
     # Create a simple token validator that checks against the configured token
     def validate_token(token: str) -> bool:
-        return token == auth_token
+        return token == config.auth_token
 
     return DebugTokenVerifier(
         validate=validate_token,
@@ -183,7 +163,7 @@ async def init_store_from_repo(
 
     finally:
         # Clean up temporary directory
-        if os.path.exists(temp_dir):
+        if Path(temp_dir).exists():
             shutil.rmtree(temp_dir)
 
 
@@ -248,16 +228,13 @@ async def lifespan(app: FastMCP) -> AsyncIterator[None]:
     config = get_config()
 
     # Show auth status
-    if config.get("auth_token"):
+    if config.is_auth_enabled:
         print("🔐 Authentication enabled (AUTH_TOKEN is set)")
     else:
         print("⚠️  Authentication disabled (set AUTH_TOKEN to enable)")
 
     # Check if we have required configuration
-    repo_url = config["repo_url"]
-    local_docs_path = config["local_docs_path"]
-
-    if not repo_url and not local_docs_path:
+    if not config.has_document_source:
         print("⚠️  No document source configured.")
         print("   Set RAG_REPO_URL or RAG_LOCAL_DOCS_PATH environment variable.")
         print("   Server will start without document store.")
@@ -268,34 +245,56 @@ async def lifespan(app: FastMCP) -> AsyncIterator[None]:
     print("🔧 Initializing Gemini RAG client...")
     _state.rag_client = GeminiRAGClient()
 
+    # Determine store name
+    if config.rag_store_name:
+        display_name = config.rag_store_name
+    elif config.rag_repo_url:
+        display_name = generate_store_name_from_url(config.rag_repo_url)
+    else:
+        display_name = generate_store_name_from_path(config.rag_local_docs_path)
+
     try:
-        if repo_url:
-            # Initialize from git repository
-            print(f"📦 Cloning repository: {repo_url}")
-            print(f"   Branch: {config['branch']}, Docs path: {config['docs_path']}")
+        # Check if store already exists (to avoid re-indexing costs)
+        existing_store, exists = await _state.rag_client.check_store_exists(display_name)
 
-            display_name, store_id, uploaded = await init_store_from_repo(
-                _state.rag_client,
-                repo_url,
-                config["docs_path"],
-                config["branch"],
-                config["store_name"],
-            )
+        if exists and existing_store and not config.rag_force_reindex:
+            # Use existing store - no upload needed!
+            print(f"✅ Found existing document store '{display_name}'")
+            print("   Skipping upload (set RAG_FORCE_REINDEX=true to re-index)")
+            _state.store_name = display_name
+            _state.store_id = existing_store
         else:
-            # Initialize from local path
-            print(f"📂 Loading local docs: {local_docs_path}")
+            # Need to upload documents
+            if config.rag_force_reindex and exists:
+                print(f"🔄 Force re-indexing '{display_name}' (RAG_FORCE_REINDEX=true)")
 
-            display_name, store_id, uploaded = await init_store_from_local(
-                _state.rag_client,
-                local_docs_path,
-                config["store_name"],
-            )
+            if config.rag_repo_url:
+                # Initialize from git repository
+                print(f"📦 Cloning repository: {config.rag_repo_url}")
+                print(f"   Branch: {config.rag_branch}, Docs path: {config.rag_docs_path}")
 
-        _state.store_name = display_name
-        _state.store_id = store_id
+                display_name, store_id, uploaded = await init_store_from_repo(
+                    _state.rag_client,
+                    config.rag_repo_url,
+                    config.rag_docs_path,
+                    config.rag_branch,
+                    config.rag_store_name,
+                )
+            else:
+                # Initialize from local path
+                print(f"📂 Loading local docs: {config.rag_local_docs_path}")
 
-        print(f"✅ Document store '{display_name}' ready!")
-        print(f"   Indexed {len(uploaded)} files")
+                display_name, store_id, uploaded = await init_store_from_local(
+                    _state.rag_client,
+                    config.rag_local_docs_path,
+                    config.rag_store_name,
+                )
+
+            _state.store_name = display_name
+            _state.store_id = store_id
+
+            print(f"✅ Document store '{display_name}' ready!")
+            print(f"   Indexed {len(uploaded)} files")
 
     except Exception as e:
         print(f"❌ Failed to initialize document store: {e}")

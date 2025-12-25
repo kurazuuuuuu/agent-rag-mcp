@@ -30,6 +30,12 @@
       - srcレイアウトを採用しています。ベストプラクティスに沿ってコードの管理を行ってください。
 
 ## 参照ドキュメント
+### Google File Search Tool公式ドキュメント
+- ファイル検索ドキュメント
+  - https://ai.google.dev/gemini-api/docs/file-search
+- FileSearchStoreドキュメント
+  - https://ai.google.dev/api/file-search/file-search-stores
+
 ### FastMCPの公式ドキュメント
 - llms.txt - 公式ドキュメントのサイトマップ
   - https://gofastmcp.com/llms.txt

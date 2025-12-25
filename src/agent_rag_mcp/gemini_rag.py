@@ -2,13 +2,14 @@
 """Gemini File Search RAG client for document queries."""
 
 import asyncio
-import os
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
 
 from google import genai
 from google.genai import types
+
+from agent_rag_mcp.config import get_config
 
 
 class GeminiRAGClient:
@@ -18,9 +19,10 @@ class GeminiRAGClient:
         """Initialize the Gemini client.
 
         Args:
-            api_key: Optional API key. If not provided, uses GEMINI_API_KEY env var.
+            api_key: Optional API key. If not provided, uses config.
         """
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        config = get_config()
+        self.api_key = api_key or config.gemini_api_key
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY environment variable is required")
 
@@ -28,18 +30,41 @@ class GeminiRAGClient:
         self.file_search_store_name: str | None = None
         self._executor = ThreadPoolExecutor(max_workers=4)
 
-    def _sync_get_or_create_store(self, store_display_name: str) -> str:
-        """Synchronous helper to get or create store."""
-        # Check if store already exists
+    def _sync_find_store(self, store_display_name: str) -> tuple[str | None, bool]:
+        """Synchronous helper to find existing store.
+
+        Returns:
+            Tuple of (store_name, has_files) - store_name is None if not found
+        """
         for store in self.client.file_search_stores.list():
             if store.display_name == store_display_name:
-                return store.name
+                # Check if store has files (store object may have file count)
+                # Note: The API may not expose file count directly, so we assume
+                # if the store exists, it has files
+                return store.name, True
+        return None, False
 
-        # Create new store
+    def _sync_create_store(self, store_display_name: str) -> str:
+        """Synchronous helper to create a new store."""
         store = self.client.file_search_stores.create(
             config={"display_name": store_display_name}
         )
         return store.name
+
+    async def check_store_exists(self, store_display_name: str) -> tuple[str | None, bool]:
+        """Check if a store with the given name already exists.
+
+        Args:
+            store_display_name: Display name for the store
+
+        Returns:
+            Tuple of (store_name, exists) - store_name is None if not found
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self._executor,
+            partial(self._sync_find_store, store_display_name),
+        )
 
     async def get_or_create_store(self, store_display_name: str) -> str:
         """Get existing store or create new one.
@@ -50,10 +75,17 @@ class GeminiRAGClient:
         Returns:
             The file search store name
         """
+        # First check if store exists
+        existing_name, exists = await self.check_store_exists(store_display_name)
+        if exists and existing_name:
+            self.file_search_store_name = existing_name
+            return existing_name
+
+        # Create new store
         loop = asyncio.get_event_loop()
         store_name = await loop.run_in_executor(
             self._executor,
-            partial(self._sync_get_or_create_store, store_display_name),
+            partial(self._sync_create_store, store_display_name),
         )
         self.file_search_store_name = store_name
         return store_name

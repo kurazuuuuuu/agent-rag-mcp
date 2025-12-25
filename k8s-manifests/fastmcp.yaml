@@ -64,3 +64,17 @@ spec:
               value: "http://agent-rag-mcp-weaviate-lb:8080"
             - name: OLLAMA_HOST
               value: "http://agent-rag-mcp-ollama-lb:11434"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-rag-mcp-fastmcp-lb
+  namespace: argocd-prod
+spec:
+  selector:
+    app: agent-rag-mcp-fastmcp
+  ports:
+  - port: 80
+    targetPort: 80
+  type: LoadBalancer
+  loadBalancerIP: 192.168.1.25

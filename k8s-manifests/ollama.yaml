@@ -39,10 +39,10 @@ spec:
         - containerPort: 11434
         resources:
           requests:
-            memory: "1Gi"
+            memory: "1024Mi"
             cpu: "500m"
           limits:
-            memory: "4Gi"
+            memory: "2048Mi"
             cpu: "2000m"
         volumeMounts:
         - name: ollama-data

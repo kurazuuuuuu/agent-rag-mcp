@@ -28,15 +28,24 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # Create client for remote server
-    client = Client(args.server_url, token=args.token)
+    args = parser.parse_args()
+    
+    try:
+        # Create client for remote server
+        client = Client(args.server_url, token=args.token)
 
-    # Create proxy that exposes remote server via stdio
-    proxy = FastMCP.as_proxy(client)
+        # Create proxy that exposes remote server via stdio
+        proxy = FastMCP.as_proxy(client)
 
-    # Run proxy with stdio transport (this handles its own event loop)
-    proxy.run(transport="stdio")
-
+        # Run proxy with stdio transport
+        proxy.run(transport="stdio")
+        
+    except Exception as e:
+        import sys
+        import traceback
+        print(f"Error in agent-rag-client: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

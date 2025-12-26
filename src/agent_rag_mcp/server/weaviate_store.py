@@ -25,7 +25,12 @@ class ExperienceStore:
             port=int(config.weaviate_url.split(":")[-1]),
         )
         self.ollama_client = OllamaClient()
-        self._ensure_schema()
+        
+        try:
+            self._ensure_schema()
+        except Exception:
+            self.client.close()
+            raise
 
     def _ensure_schema(self) -> None:
         """Ensure the Experience schema exists."""
@@ -38,7 +43,7 @@ class ExperienceStore:
                     Property(name="pattern", data_type=DataType.TEXT),
                     Property(name="input_sample", data_type=DataType.TEXT),
                     Property(name="code_result", data_type=DataType.TEXT),
-                    Property(name="success", data_type=DataType.BOOLEAN),
+                    Property(name="success", data_type=DataType.BOOL),
                     Property(name="execution_time", data_type=DataType.NUMBER),
                     Property(name="full_json", data_type=DataType.TEXT),  # Store full request
                 ],

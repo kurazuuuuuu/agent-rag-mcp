@@ -17,6 +17,7 @@ dependencies = [
 [project.scripts]
 agent-rag-mcp = "agent_rag_mcp.server.main:main"
 agent-rag-client = "agent_rag_mcp.client.main:main"
+agent-rag-client-http = "agent_rag_mcp.client.main_http:main"
 
 [dependency-groups]
 dev = [

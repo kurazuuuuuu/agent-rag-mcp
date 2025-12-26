@@ -37,7 +37,7 @@ class GeminiClient:
     async def generate_content(
         self,
         prompt: str,
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-2.5-flash-lite",
         temperature: float = 0.7,
     ) -> str:
         """Generate content using Gemini.
@@ -137,7 +137,7 @@ class GeminiClient:
         self,
         question: str,
         store_name: str | None = None,
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-2.5-flash-lite",
     ) -> str:
         """Query the document store with a question.
 

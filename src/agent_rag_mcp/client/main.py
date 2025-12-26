@@ -1,24 +1,25 @@
-# agent_rag_mcp/client.py
-"""MCP Proxy Client - connects to remote MCP server and exposes via stdio."""
+# agent_rag_mcp/client/main.py
+"""MCP Proxy Client (Production SSE version) - connects to remote MCP server and exposes via stdio."""
 
 import argparse
 import os
 
 from fastmcp import Client, FastMCP
-from fastmcp.client import StreamableHttpTransport
+from fastmcp.client.transports import SSETransport
 
 
 def main() -> None:
-    """Entry point for the agent-rag-client command."""
+    """Entry point for the production SSE client."""
     parser = argparse.ArgumentParser(
-        description="MCP Proxy Client - Connect to remote Agent RAG MCP server",
+        description="MCP Proxy Client (SSE) - Connect to remote Agent RAG MCP server",
         prog="agent-rag-client",
     )
     parser.add_argument(
         "--server-url",
         "-s",
-        default=os.getenv("MCP_SERVER_URL", "http://127.0.0.1:8000/mcp"),
-        help="Remote MCP server URL (default: http://127.0.0.1:8000/mcp)",
+        # Default to /sse endpoint for the new transport
+        default=os.getenv("MCP_SERVER_URL", "http://127.0.0.1:8000/sse"),
+        help="Remote MCP server SSE URL (default: http://127.0.0.1:8000/sse)",
     )
     parser.add_argument(
         "--token",
@@ -29,14 +30,15 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # Create client for remote server
-    transport = StreamableHttpTransport(args.server_url)
+    # Create SSE client for remote server
+    # SSETransport handles long-running tool calls much better than StreamableHttpTransport
+    transport = SSETransport(args.server_url)
     client = Client(transport, auth=args.token)
 
-    # Create proxy that exposes remote server via stdio
+    # Create proxy that exposes remote server via stdio (standard MCP connection for AI apps)
     proxy = FastMCP.as_proxy(client)
 
-    # Run proxy with stdio transport (this handles its own event loop)
+    # Run proxy with stdio transport
     proxy.run(transport="stdio")
 
 

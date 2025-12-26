@@ -25,6 +25,12 @@ def main() -> None:
         default=os.getenv("AGENT_RAG_TOKEN"),
         help="Authentication token (optional, can also use AGENT_RAG_TOKEN env var)",
     )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=70.0,
+        help="Client timeout in seconds (default: 70.0)",
+    )
 
     args = parser.parse_args()
 
@@ -32,7 +38,7 @@ def main() -> None:
     
     try:
         # Create client for remote server
-        client = Client(args.server_url, auth=args.token)
+        client = Client(args.server_url, auth=args.token, timeout=args.timeout)
 
         # Create proxy that exposes remote server via stdio
         proxy = FastMCP.as_proxy(client)

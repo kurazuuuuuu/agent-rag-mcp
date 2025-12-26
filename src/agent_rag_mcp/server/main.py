@@ -18,6 +18,8 @@ from agent_rag_mcp.server.gemini import GeminiClient
 from agent_rag_mcp.server.weaviate_store import ExperienceStore
 import json
 import yaml
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 # Supported file extensions for documentation
 SUPPORTED_EXTENSIONS = ["*.md", "*.txt", "*.rst", "*.json", "*.yaml", "*.yml"]
@@ -356,6 +358,18 @@ mcp = FastMCP(
     lifespan=lifespan,
     auth=_auth_provider,
 )
+
+
+# ==============================================================================
+# Custom Routes (Health Checks, etc.)
+# ==============================================================================
+async def root_health_check(request):
+    """Simple health check for the root path."""
+    return JSONResponse({"status": "ok", "message": "Agent RAG MCP Server is running"})
+
+
+# Add custom route to the underlying Starlette app
+mcp.app.routes.append(Route("/", endpoint=root_health_check, methods=["GET"]))
 
 
 @mcp.tool

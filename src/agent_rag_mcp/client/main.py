@@ -5,6 +5,7 @@ import argparse
 import os
 
 from fastmcp import Client, FastMCP
+from fastmcp.client import StreamableHttpTransport
 
 
 def main() -> None:
@@ -29,7 +30,8 @@ def main() -> None:
     args = parser.parse_args()
 
     # Create client for remote server
-    client = Client(args.server_url, auth=args.token)
+    transport = StreamableHttpTransport(args.server_url)
+    client = Client(transport, auth=args.token)
 
     # Create proxy that exposes remote server via stdio
     proxy = FastMCP.as_proxy(client)

@@ -330,16 +330,17 @@ _auth_provider = get_auth_provider()
 mcp = FastMCP(
     name="AgentRAG-MCP",
     instructions="""
-        This server provides "Retrieval-Augmented Generation" tools for AI agents.
-        It enables you to:
-        - Ask questions about project documentation
+        このサーバーは、AIエージェントのための「RAG（検索拡張生成）」ツールを提供します。
+        以下の2つの主要な機能を使い分けてください：
 
-        Use the ask_project_document tool to get answers based on the indexed documentation.
-        The server uses semantic search to find relevant information and generates
-        accurate answers grounded in the actual documents.
+        1. **ask_project_document**: プロジェクトのドキュメント検索
+           - 仕様書、設計書、READMEなどの「静的なドキュメント」について質問する際に使用します。
+           - 例: 「認証機能の仕様は？」「データベースのスキーマ構造は？」
 
-        Use the ask_code_pattern tool to learn from previous coding experiences and 
-        retrieve dynamic patterns.
+        2. **ask_code_pattern**: コーディング経験の検索と学習（Dynamic Learning）
+           - 過去の実装パターン、成功例、失敗談などの「経験則」を知りたい場合に使用します。
+           - また、あなたの実装結果を送信することで、システムに新しい知識を学習させることができます。
+           - 入力は必ず指定されたJSONスキーマに従ってください。
     """,
     lifespan=lifespan,
     auth=_auth_provider,
@@ -351,18 +352,18 @@ mcp = FastMCP(
 # ==============================================================================
 @mcp.tool
 async def ask_project_document(question: str) -> str:
-    """Ask questions about the project documentation.
+    """プロジェクトのドキュメント（仕様書・設計書など）について質問します。
 
-    Use this tool to get answers based on the project's documentation.
-    The server uses semantic search to find relevant information and
-    generates accurate answers grounded in the actual documents.
+    プロジェクトの「静的な仕様」や「設計の背景」を知りたい場合に使用してください。
+    サーバーは、インデックス化されたドキュメントから関連情報を検索し、
+    事実に基づいた回答を生成します。
 
     Args:
-        question: Your question about the project documentation.
-                  Be specific for better results.
+        question: ドキュメントに対する質問内容。
+                  より具体的な結果を得るために、詳細に記述してください。
 
     Returns:
-        Answer generated from the project documentation with citations.
+        ドキュメントの内容に基づいた回答（引用付き）。
     """
     if _state.rag_client is None or _state.store_id is None:
         return (
@@ -414,19 +415,18 @@ async def get_request_schema_template() -> str:
 
 @mcp.tool
 async def ask_code_pattern(request_data: str) -> str:
-    """Ask for code patterns or share an experience to learn from.
+    """コーディングの「経験則（パターン・成功/失敗例）」を検索・学習します。
 
-    This tool enables Dynamic Learning RAG.
-    - If you provide a result/code in your request, it will be learned (stored).
-    - It always searches for similar past experiences to provide context.
-    - It uses Gemini to analyze the request and retrieved patterns to give advice.
+    Dynamic Learning RAG を実現するためのツールです。
+    - 実装のベストプラクティスや、過去のハマりポイントを知りたい場合に使用します。
+    - あなたの実装結果（コードや成功/失敗）を含めることで、この経験が蓄積され、将来の検索に役立ちます。
 
     Args:
-        request_data: JSON string matching the request_schema.toon structure.
-                      Must include 'request' key.
+        request_data: `request_schema.toon` の構造に従ったJSON文字列。
+                      必ず 'request' キーを含める必要があります。
 
     Returns:
-        Analysis and relevant patterns from the dynamic knowledge base.
+        過去の類似経験（パターン）と、それに基づいた分析・アドバイス。
     """
     if _state.experience_store is None:
         return "Error: Experience Store is not available (Weaviate connection failed)."

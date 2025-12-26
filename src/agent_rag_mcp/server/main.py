@@ -255,8 +255,16 @@ async def lifespan(app: FastMCP) -> AsyncIterator[None]:
         return
 
     # Initialize RAG client
-    print("🔧 Initializing Gemini RAG client...")
-    _state.rag_client = GeminiClient()
+    try:
+        print("🔧 Initializing Gemini RAG client...")
+        _state.rag_client = GeminiClient()
+        print("   Gemini RAG client initialized.")
+    except Exception as e:
+        print(f"❌ Failed to initialize Gemini RAG client: {e}")
+        print("   Document RAG features will be unavailable.")
+        _state.rag_client = None
+        yield
+        return
 
     # Determine store name
     if config.rag_store_name:
@@ -268,11 +276,12 @@ async def lifespan(app: FastMCP) -> AsyncIterator[None]:
 
     try:
         # Check if store already exists (to avoid re-indexing costs)
+        print(f"🔍 Checking for existing document store '{display_name}'...")
         existing_store, exists = await _state.rag_client.check_store_exists(display_name)
 
         if exists and existing_store and not config.rag_force_reindex:
             # Use existing store - no upload needed!
-            print(f"✅ Found existing document store '{display_name}'")
+            print(f"✅ Found existing document store '{display_name}' ({existing_store})")
             print("   Skipping upload (set RAG_FORCE_REINDEX=true to re-index)")
             _state.store_name = display_name
             _state.store_id = existing_store
@@ -311,8 +320,9 @@ async def lifespan(app: FastMCP) -> AsyncIterator[None]:
 
     except Exception as e:
         print(f"❌ Failed to initialize document store: {e}")
+        import traceback
+        traceback.print_exc()
         print("   Server will start without document store.")
-        _state.rag_client = None
 
     yield
 

@@ -26,6 +26,9 @@ WORKDIR /app
 # Copy source code
 COPY . /app
 
+# Install git for repo cloning
+RUN apk add --no-cache git
+
 # Copy uv
 COPY --from=builder /bin/uv /usr/local/bin/uv
 

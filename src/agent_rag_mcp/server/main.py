@@ -17,6 +17,7 @@ from agent_rag_mcp.core.config import get_config
 from agent_rag_mcp.server.gemini import GeminiClient
 from agent_rag_mcp.server.weaviate_store import ExperienceStore
 import json
+import toon_format
 
 # Supported file extensions for documentation
 SUPPORTED_EXTENSIONS = ["*.md", "*.txt", "*.rst", "*.json", "*.yaml", "*.yml"]
@@ -422,7 +423,8 @@ async def ask_code_pattern(request_data: str) -> str:
     - あなたの実装結果（コードや成功/失敗）を含めることで、この経験が蓄積され、将来の検索に役立ちます。
 
     Args:
-        request_data: `request_schema.toon` の構造に従ったJSON文字列。
+        request_data: `request_schema.toon` の構造に従ったデータ文字列。
+                      トークン節約のため、TOONフォーマットの使用を強く推奨します（JSONも許容しますが非推奨）。
                       必ず 'request' キーを含める必要があります。
 
     Returns:
@@ -434,23 +436,35 @@ async def ask_code_pattern(request_data: str) -> str:
     if _state.rag_client is None:
         return "Error: Gemini Client is not available."
 
-    # Robust parsing logic
-    if isinstance(request_data, dict):
-        data = request_data
-    else:
-        try:
-            data = json.loads(request_data)
-            # Handle double-encoded JSON string
-            if isinstance(data, str):
-                try:
-                    data = json.loads(data)
-                except json.JSONDecodeError:
-                    pass # Use as-is if second parse fails (will be caught by type check below)
-        except (json.JSONDecodeError, TypeError):
-            return "Error: Invalid JSON format. Please ensure request_data is a valid JSON string."
+    # Parse Request Data (Try TOON first, then JSON)
+    data = None
+    
+    # 1. Try parsing as TOON (Preferred)
+    try:
+        parsed = toon_format.decode(request_data)
+        if isinstance(parsed, dict):
+            data = parsed
+    except Exception:
+        pass # Not valid TOON, try other formats
+
+    # 2. Try parsing as JSON (including dict input check)
+    if data is None:
+        if isinstance(request_data, dict):
+            data = request_data
+        else:
+            try:
+                data = json.loads(request_data)
+                # Handle double-encoded JSON string
+                if isinstance(data, str):
+                    try:
+                        data = json.loads(data)
+                    except json.JSONDecodeError:
+                        pass 
+            except (json.JSONDecodeError, TypeError):
+                pass
 
     if not isinstance(data, dict):
-        return f"Error: Request data must be a JSON object (dictionary), but got {type(data).__name__}."
+        return "Error: Invalid data format. Please provide valid TOON or JSON string."
 
     # extraction for search
     req_body = data.get("request", {})

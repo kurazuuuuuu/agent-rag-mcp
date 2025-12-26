@@ -11,6 +11,7 @@ dependencies = [
     { name = "google-genai" },
     { name = "ollama" },
     { name = "python-dotenv" },
+    { name = "toon-format" },
     { name = "weaviate-client" },
 ]
 
@@ -25,6 +26,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=1.56.0" },
     { name = "ollama", specifier = ">=0.6.1" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
+    { name = "toon-format", specifier = ">=0.1.0" },
     { name = "weaviate-client", specifier = ">=4.19.0" },
 ]
 
@@ -1437,6 +1439,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/0a/d4/2b0cd0fe285e14b36db076e78c93766ff1d529d70408bd1d2a5a84f1d929/tenacity-9.1.2.tar.gz", hash = "sha256:1169d376c297e7de388d18b4481760d478b0e99a777cad3a9c86e556f4b697cb", size = 48036, upload-time = "2025-04-02T08:25:09.966Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e5/30/643397144bfbfec6f6ef821f36f33e57d35946c44a2352d3c9f0ae847619/tenacity-9.1.2-py3-none-any.whl", hash = "sha256:f77bf36710d8b73a50b2dd155c97b870017ad21afe6ab300326b0371b3b05138", size = 28248, upload-time = "2025-04-02T08:25:07.678Z" },
+]
+
+[[package]]
+name = "toon-format"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d4/5c/f74ab4f7faaa00ffc0c13aea4acfdd5e1fdecf4a1e81196f39203e56dc10/toon_format-0.1.0.tar.gz", hash = "sha256:77303c9b06956fe8b0066d2bca52dfdc63e2b3abba439c3c3545dbbd43a97d48", size = 3078, upload-time = "2025-11-01T20:59:59.991Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ee/ae/c52d28ce93490f82cfbbf49e1b9a85f33449c89fc1a5aa53d476d3a69666/toon_format-0.1.0-py3-none-any.whl", hash = "sha256:f0c7bf3f63f1fc08739127ca895a55922617193f942f84474489770d7cd1ffc2", size = 4803, upload-time = "2025-11-01T20:59:58.84Z" },
 ]
 
 [[package]]

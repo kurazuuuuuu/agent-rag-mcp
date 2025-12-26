@@ -37,4 +37,4 @@ EXPOSE 8000
 
 # FastAPI CLI
 # FastAPI CLI
-CMD ["uv", "run", "fastmcp", "run", "src/agent_rag_mcp/server/main.py", "--transport", "sse", "--path", "/mcp", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "fastmcp", "run", "src/agent_rag_mcp/server/main.py", "--transport", "http", "--host", "0.0.0.0", "--port", "8000"]

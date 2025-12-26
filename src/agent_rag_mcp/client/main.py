@@ -29,7 +29,7 @@ def main() -> None:
     args = parser.parse_args()
 
     # Create client for remote server
-    client = Client(args.server_url, auth=args.token)
+    client = Client(args.server_url, auth=args.token, transport="http")
 
     # Create proxy that exposes remote server via stdio
     proxy = FastMCP.as_proxy(client)

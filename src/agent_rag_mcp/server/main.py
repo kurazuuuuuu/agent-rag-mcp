@@ -372,14 +372,8 @@ async def ask_project_document(question: str) -> str:
         )
 
     # Query the documents
-    try:
-        answer = await asyncio.wait_for(
-            _state.rag_client.query_docs(question, store_name=_state.store_id),
-            timeout=60.0,
-        )
-        return answer
-    except asyncio.TimeoutError:
-        return "Error: Processing timed out (60s limit). Please try a more specific query."
+    answer = await _state.rag_client.query_docs(question, store_name=_state.store_id)
+    return answer
 
 
 @mcp.tool
@@ -481,13 +475,7 @@ async def ask_code_pattern(request_data: str) -> str:
         f"Provide a helpful response, including code examples if applicable."
     )
 
-    try:
-        response = await asyncio.wait_for(
-            _state.rag_client.generate_content(prompt),
-            timeout=60.0
-        )
-    except asyncio.TimeoutError:
-        return "Error: Processing timed out (60s limit). Please simplify your request."
+    response = await _state.rag_client.generate_content(prompt)
 
     # 3. Learning (Store) if this is a report with a result
     learning_msg = ""

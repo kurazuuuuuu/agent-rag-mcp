@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "agent-rag": {
-      "command": "/opt/homebrew/bin/uvx",
+      "command": "uvx",
       "args": [
         "--from",
         "git+https://github.com/kurazuuuuuu/agent-rag-mcp",

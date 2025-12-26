@@ -25,33 +25,18 @@ def main() -> None:
         default=os.getenv("AGENT_RAG_TOKEN"),
         help="Authentication token (optional, can also use AGENT_RAG_TOKEN env var)",
     )
-    parser.add_argument(
-        "--timeout",
-        type=float,
-        default=70.0,
-        help="Client timeout in seconds (default: 70.0)",
-    )
 
     args = parser.parse_args()
 
-    args = parser.parse_args()
-    
-    try:
-        # Create client for remote server
-        client = Client(args.server_url, auth=args.token, timeout=args.timeout)
+    # Create client for remote server
+    client = Client(args.server_url)
 
-        # Create proxy that exposes remote server via stdio
-        proxy = FastMCP.as_proxy(client)
+    # Create proxy that exposes remote server via stdio
+    proxy = FastMCP.as_proxy(client)
 
-        # Run proxy with stdio transport
-        proxy.run(transport="stdio")
-        
-    except Exception as e:
-        import sys
-        import traceback
-        print(f"Error in agent-rag-client: {e}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-        sys.exit(1)
+    # Run proxy with stdio transport (this handles its own event loop)
+    proxy.run(transport="stdio")
+
 
 if __name__ == "__main__":
     main()

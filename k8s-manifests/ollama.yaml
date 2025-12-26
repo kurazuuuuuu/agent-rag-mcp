@@ -42,7 +42,7 @@ spec:
             memory: "1024Mi"
             cpu: "500m"
           limits:
-            memory: "2048Mi"
+            memory: "4096Mi"
             cpu: "2000m"
         volumeMounts:
         - name: ollama-data

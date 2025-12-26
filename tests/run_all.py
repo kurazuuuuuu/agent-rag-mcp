@@ -5,7 +5,7 @@ import asyncio
 import argparse
 import json
 import sys
-from typing import Any, Dict, List
+from typing import Any, Dict
 from fastmcp import Client
 from fastmcp.client.transports import SSETransport
 

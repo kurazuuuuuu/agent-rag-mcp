@@ -48,6 +48,12 @@ services:
       - WEAVIATE_URL=http://weaviate:8080
       - OLLAMA_HOST=http://ollama:11434
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - RAG_REPO_URL=${RAG_REPO_URL}
+      - RAG_DOCS_PATH=${RAG_DOCS_PATH:-Docs}
+      - RAG_BRANCH=${RAG_BRANCH:-main}
+      - AUTH_TOKEN=${AUTH_TOKEN}
+      - RAG_FORCE_REINDEX=${RAG_FORCE_REINDEX:-false}
+      - AGENT_RAG_TOKEN=${AUTH_TOKEN} # For client compatibility if needed internally
     depends_on:
       - weaviate
       - ollama 

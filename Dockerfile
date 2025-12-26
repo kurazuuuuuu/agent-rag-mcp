@@ -36,4 +36,5 @@ COPY --from=builder --chown=app:app /app/.venv /app/.venv
 EXPOSE 8000
 
 # FastAPI CLI
-CMD ["uv", "run", "fastmcp", "run", "src/agent_rag_mcp/server/main.py", "--transport", "http", "--host", "0.0.0.0", "--port", "8000"]
+# FastAPI CLI
+CMD ["uv", "run", "fastmcp", "run", "src/agent_rag_mcp/server/main.py", "--transport", "sse", "--host", "0.0.0.0", "--port", "8000"]

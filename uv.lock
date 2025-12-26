@@ -11,6 +11,7 @@ dependencies = [
     { name = "google-genai" },
     { name = "ollama" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
     { name = "toon-format" },
     { name = "weaviate-client" },
 ]
@@ -26,6 +27,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=1.56.0" },
     { name = "ollama", specifier = ">=0.6.1" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "toon-format", specifier = ">=0.1.0" },
     { name = "weaviate-client", specifier = ">=4.19.0" },
 ]

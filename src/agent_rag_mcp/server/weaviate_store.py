@@ -48,7 +48,7 @@ class ExperienceStore:
                     Property(name="full_json", data_type=DataType.TEXT),  # Store full request
                 ],
                 # We manage vectors manually via Ollama
-                vector_config=Configure.Vectorizer.none(),
+                vectorizer_config=Configure.Vectorizer.none(),
             )
 
     def add_experience(self, request_data: Dict[str, Any]) -> str:

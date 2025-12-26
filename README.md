@@ -7,7 +7,12 @@ Agent RAG MCPサーバーは **AIエージェントのハルシネーション�
 
 ## 詳細
 ### > 接続方法
-検討中
+* Streamable-HTTPを使用してクライアントはMCPサーバーに接続します。
+* 最終的にはOAuth等の本格的な認可方式に対応する予定です。
+
+> [!NOTE]
+> 現状はTOKENを使用したシンプルな認証になっています。
+> サーバーの環境変数を設定しないことでスキップした状態で起動できます。
 
 ### > ドキュメントRAG
 * Gemini APIのFile Search Toolを使用したRAGを使用します。
@@ -35,8 +40,9 @@ Agent RAG MCPサーバーは **AIエージェントのハルシネーション�
 * Python
   * [uv](https://docs.astral.sh/uv/)
   * [FastMCP v2](https://github.com/jlowin/fastmcp)
+* Ollama
+  * [qwen3-embedding:0.6b](https://ollama.com/library/qwen3-embedding)
 * Google
-  * Gemma 3
   * Gemini API
     * [File Search Tool](https://blog.google/technology/developers/file-search-gemini-api/)
 * Database

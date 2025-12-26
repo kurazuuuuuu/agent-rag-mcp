@@ -17,7 +17,7 @@ from agent_rag_mcp.core.config import get_config
 from agent_rag_mcp.server.gemini import GeminiClient
 from agent_rag_mcp.server.weaviate_store import ExperienceStore
 import json
-import toon_format
+import yaml
 
 # Supported file extensions for documentation
 SUPPORTED_EXTENSIONS = ["*.md", "*.txt", "*.rst", "*.json", "*.yaml", "*.yml"]
@@ -348,9 +348,6 @@ mcp = FastMCP(
 )
 
 
-# ==============================================================================
-# MCP Tools
-# ==============================================================================
 @mcp.tool
 async def ask_project_document(question: str) -> str:
     """プロジェクトのドキュメント（仕様書・設計書など）について質問します。
@@ -373,9 +370,16 @@ async def ask_project_document(question: str) -> str:
             "and restart the server."
         )
 
-    # Query the documents
-    answer = await _state.rag_client.query_docs(question, store_name=_state.store_id)
-    return answer
+    target_store = _state.store_id
+    model = "gemini-2.5-flash"
+    
+    # Use direct query_docs (via asyncio.to_thread)
+    # The SSE transport handles long-running calls better than streamable-http
+    try:
+        answer = await _state.rag_client.query_docs(question, store_name=target_store, model=model)
+        return answer
+    except Exception as e:
+        return f"Error: Failed to execute RAG query: {str(e)}"
 
 
 @mcp.tool
@@ -389,6 +393,17 @@ async def get_store_info() -> str:
         return "No document store is currently initialized."
 
     return f"Document Store: {_state.store_name}\nStore ID: {_state.store_id}"
+
+
+@mcp.tool
+async def test_large_response() -> str:
+    """Test tool that returns a large response string.
+    
+    Used for debugging response size issues.
+    """
+    # Generate a large string (about 3000 chars)
+    large_text = "This is a test response. " * 150
+    return f"Large response test ({len(large_text)} chars):\n{large_text}"
 
 
 @mcp.tool
@@ -414,107 +429,146 @@ async def get_request_schema_template() -> str:
         return f"Error reading schema file: {e}"
 
 
-@mcp.tool
-async def ask_code_pattern(request_data: str) -> str:
-    """コーディングの「経験則（パターン・成功/失敗例）」を検索・学習します。
-
-    Dynamic Learning RAG を実現するためのツールです。
-    - 実装のベストプラクティスや、過去のハマりポイントを知りたい場合に使用します。
-    - あなたの実装結果（コードや成功/失敗）を含めることで、この経験が蓄積され、将来の検索に役立ちます。
-
-    Args:
-        request_data: `request_schema.toon` の構造に従ったデータ文字列。
-                      トークン節約のため、TOONフォーマットの使用を強く推奨します（JSONも許容しますが非推奨）。
-                      必ず 'request' キーを含める必要があります。
-
-    Returns:
-        過去の類似経験（パターン）と、それに基づいた分析・アドバイス。
-    """
-    if _state.experience_store is None:
-        return "Error: Experience Store is not available (Weaviate connection failed)."
-    
-    if _state.rag_client is None:
-        return "Error: Gemini Client is not available."
-
-    # Parse Request Data (Try TOON first, then JSON)
+def _parse_code_request(request_data: str) -> dict | None:
+    """Helper to parse TOON/YAML or JSON request data."""
     data = None
-    
-    # 1. Try parsing as TOON (Preferred)
+    # 1. Try parsing as TOON (YAML-compatible)
     try:
-        parsed = toon_format.decode(request_data)
+        parsed = yaml.safe_load(request_data)
         if isinstance(parsed, dict):
             data = parsed
     except Exception:
-        pass # Not valid TOON, try other formats
+        pass
 
-    # 2. Try parsing as JSON (including dict input check)
+    # 2. Try parsing as JSON
     if data is None:
         if isinstance(request_data, dict):
             data = request_data
         else:
             try:
                 data = json.loads(request_data)
-                # Handle double-encoded JSON string
                 if isinstance(data, str):
                     try:
                         data = json.loads(data)
                     except json.JSONDecodeError:
-                        pass 
+                        pass
             except (json.JSONDecodeError, TypeError):
                 pass
+    return data
 
+
+@mcp.tool
+async def ask_code_pattern(request_data: str) -> str:
+    """コーディングの「経験則（パターン・成功/失敗例）」を検索し、最適な実装を提案します。
+
+    Dynamic Learning RAG を使用して、過去の成功例や失敗談からアドバイスを生成します。
+    - 新しい機能を実装する前に、最適なパターンを知りたい場合に使用してください。
+    - 特定のライブラリやフレームワークの「ハマりポイント」を確認するのに役立ちます。
+
+    Args:
+        request_data: `request_schema.toon` の構造（requestキー必須）に従ったデータ文字列。
+                      TOONフォーマットの使用を推奨します。
+
+    Returns:
+        過去の類似事例に基づいた分析と実装アドバイス。
+    """
+    if _state.experience_store is None or _state.rag_client is None:
+        return "Error: Experience Store or Gemini Client is not available."
+
+    data = _parse_code_request(request_data)
     if not isinstance(data, dict):
         return "Error: Invalid data format. Please provide valid TOON or JSON string."
 
-    # extraction for search
     req_body = data.get("request", {})
     query_text = (
         f"Language: {req_body.get('language', '')} "
         f"Framework: {req_body.get('framework', '')} "
         f"Pattern: {req_body.get('design_context', {}).get('pattern', '')} "
-        f"Feature: {req_body.get('content', {}).get('feature_details', '')} "
-        f"Input: {req_body.get('reproduction', {}).get('input_sample', '')}"
+        f"Feature: {req_body.get('content', {}).get('feature_details', '')}"
     )
 
     # 1. Search for existing experiences
-    # We always search to provide context
     similar_exps = _state.experience_store.search_experience(query_text, limit=3)
     
     context_str = "Found similar past experiences:\n"
     for i, exp in enumerate(similar_exps):
         props = exp.get("properties", {})
         context_str += (
-            f"\n--- Experience {i+1} (Distance: {exp.get('distance', 'N/A')}) ---\n"
+            f"\n--- Experience {i+1} ---\n"
             f"Language: {props.get('language')}\n"
             f"Pattern: {props.get('pattern')}\n"
-            f"Code Result: {props.get('code_result')}\n"
             f"Success: {props.get('success')}\n"
+            f"Code/Result: {props.get('code_result')}\n"
         )
 
     # 2. Reasoning with Gemini
     prompt = (
-        f"You are an expert software engineer assistant.\n"
-        f"Analyze the following request and the provided past experiences.\n"
-        f"If the user is reporting a success/failure, verify it and summarize the learning.\n"
-        f"If the user is asking for help, use the past experiences to provide the best code pattern.\n\n"
-        f"CURRENT REQUEST:\n{json.dumps(req_body, indent=2)}\n\n"
-        f"PAST EXPERIENCES:\n{context_str}\n\n"
-        f"Provide a helpful response, including code examples if applicable."
+        f"あなたは世界最高のソフトウェアエンジニアです。\n"
+        f"ユーザーが実装に関するコードパターンやアドバイスを求めています。\n"
+        f"以下の過去の経験（成功例・失敗例）を参考に、最適な回答を【日本語】で提供してください。\n\n"
+        f"リクエスト内容:\n{json.dumps(req_body, indent=2, ensure_ascii=False)}\n\n"
+        f"過去の類似経験:\n{context_str}\n\n"
+        f"回答は具体的かつ丁寧に行い、必要に応じてコード例やベストプラクティスを含めてください。"
     )
 
-    response = await _state.rag_client.generate_content(prompt)
+    return await _state.rag_client.generate_content(prompt)
 
-    # 3. Learning (Store) if this is a report with a result
-    learning_msg = ""
+
+@mcp.tool
+async def tell_code_pattern(request_data: str) -> str:
+    """実装したコードの結果（成功・失敗・エラー）を報告し、システムに学習させます。
+
+    あなたが経験した「成功した実装」や「発生したエラー」を記録することで、
+    次回以降の `ask_code_pattern` で自分自身や他のエージェントが同じ轍を踏まないようにします。
+
+    Args:
+        request_data: `request_schema.toon` の構造に従ったデータ文字列。
+                      'content' 内に 'result' (SUCCESS/FAILED) を含める必要があります。
+                      エラーが発生した場合は、エラーログや再現手順を含めてください。
+
+    Returns:
+        学習完了のメッセージ。エラー報告の場合は、過去の知見に基づいた改善案も提示されます。
+    """
+    if _state.experience_store is None or _state.rag_client is None:
+        return "Error: Experience Store or Gemini Client is not available."
+
+    data = _parse_code_request(request_data)
+    if not isinstance(data, dict):
+        return "Error: Invalid data format. Please provide valid TOON or JSON string."
+
+    # 1. Record the experience
+    try:
+        uuid_id = _state.experience_store.add_experience(data)
+        learning_msg = f"[System] 経験を学習しました。 (ID: {uuid_id})\n\n"
+    except Exception as e:
+        return f"Error recording experience: {e}"
+
+    req_body = data.get("request", {})
     result_val = req_body.get("content", {}).get("result")
-    code_val = req_body.get("content", {}).get("code")
-    
-    # Simple heuristic: if we have a result status (SUCCESS/FAILED) or code content, we treat it as an experience to learn
-    if result_val or code_val:
-        try:
-            uuid_id = _state.experience_store.add_experience(data)
-            learning_msg = f"\n\n[System] New experience learned/recorded! (ID: {uuid_id})"
-        except Exception as e:
-            learning_msg = f"\n\n[System] Failed to record experience: {e}"
 
-    return response + learning_msg
+    # 2. If it's a failure, provide immediate advice based on search
+    if result_val == "FAILED":
+        query_text = (
+            f"Error in {req_body.get('language')} {req_body.get('framework')}: "
+            f"{req_body.get('content', {}).get('feature_details', '')}"
+        )
+        similar_exps = _state.experience_store.search_experience(query_text, limit=3)
+        
+        context_str = ""
+        for i, exp in enumerate(similar_exps):
+            if exp.get("properties", {}).get("success"):
+                props = exp.get("properties", {})
+                context_str += f"\n- Successful Pattern {i+1}: {props.get('pattern')}\nCode: {props.get('code_result')}\n"
+
+        if context_str:
+            prompt = (
+                f"ユーザーの実装が失敗しました。以下の成功事例を参考に、修正案を【日本語】で提案してください。\n"
+                f"失敗したリクエスト:\n{json.dumps(req_body, indent=2, ensure_ascii=False)}\n\n"
+                f"参考にすべき成功例:\n{context_str}"
+            )
+            advice = await _state.rag_client.generate_content(prompt)
+            return learning_msg + "### 過去の成功事例に基づく改善案:\n" + advice
+        else:
+            return learning_msg + "過去に類似の成功事例は見つかりませんでした。この失敗は将来の参照のために記録されました。"
+
+    return learning_msg + "素晴らしい！この成功体験は将来の実装アドバイスに反映されます。"

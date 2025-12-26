@@ -42,11 +42,13 @@ services:
     build: .
     volumes:
       - .:/app
+      - /app/.venv
     ports:
       - "8000:8000"
     environment:
       - WEAVIATE_URL=http://weaviate:8080
       - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=qwen3-embedding:0.6b
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - RAG_REPO_URL=${RAG_REPO_URL}
       - RAG_DOCS_PATH=${RAG_DOCS_PATH:-Docs}

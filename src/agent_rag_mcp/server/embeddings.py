@@ -25,6 +25,34 @@ class OllamaClient:
         
         # We'll use the Client instance to be safe and explicit
         self.client = ollama.Client(host=self.host)
+        
+        # Ensure model is available
+        self._ensure_model()
+
+    def _ensure_model(self) -> None:
+        """Ensure the configured model exists in Ollama, pulling if necessary."""
+        try:
+            # Check if model exists
+            models_response = self.client.list()
+            # Handle different response structures (list of objects vs dict)
+            # models.models keys: 'name', 'model', 'modified_at', etc.
+            existing_models = [m.model for m in models_response.models]
+            
+            # Simple check: exact match or tag match
+            # self.model might be "qwen3-embedding:0.6b"
+            # existing might be "qwen3-embedding:0.6b" or "qwen3-embedding"
+            
+            if self.model not in existing_models:
+                print(f"📦 Model '{self.model}' not found in Ollama. Pulling now... (This may take a while)")
+                # stream=True allows us to see progress if we iterated, but for simplicity we block
+                self.client.pull(self.model)
+                print(f"✅ Model '{self.model}' pulled successfully.")
+            else:
+                print(f"✅ Model '{self.model}' is ready.")
+                
+        except Exception as e:
+            print(f"⚠️ Failed to ensure model '{self.model}': {e}")
+            print("   Embeddings might fail if model is missing.")
 
     def get_embedding(self, text: str) -> list[float]:
         """Get vector embedding for a text string.

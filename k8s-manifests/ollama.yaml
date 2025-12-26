@@ -51,6 +51,7 @@ spec:
         args:
         - |
           ollama serve
+          ollama pull qwen3-embedding:0.6b
         env:
         - name: OLLAMA_KEEP_ALIVE #アンロード防止
           value: "-1"

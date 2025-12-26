@@ -77,7 +77,7 @@ def get_config() -> Config:
         # Dynamic Learning RAG
         weaviate_url=os.getenv("WEAVIATE_URL", "http://localhost:8080"),
         ollama_host=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
-        ollama_model=os.getenv("OLLAMA_MODEL", "qwen2.5-coder:latest"),
+        ollama_model=os.getenv("OLLAMA_MODEL", "qwen3-embedding:0.6b"),
     )
 
 

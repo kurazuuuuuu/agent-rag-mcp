@@ -434,10 +434,23 @@ async def ask_code_pattern(request_data: str) -> str:
     if _state.rag_client is None:
         return "Error: Gemini Client is not available."
 
-    try:
-        data = json.loads(request_data)
-    except json.JSONDecodeError:
-        return "Error: Invalid JSON format. Please ensure request_data is a valid JSON string."
+    # Robust parsing logic
+    if isinstance(request_data, dict):
+        data = request_data
+    else:
+        try:
+            data = json.loads(request_data)
+            # Handle double-encoded JSON string
+            if isinstance(data, str):
+                try:
+                    data = json.loads(data)
+                except json.JSONDecodeError:
+                    pass # Use as-is if second parse fails (will be caught by type check below)
+        except (json.JSONDecodeError, TypeError):
+            return "Error: Invalid JSON format. Please ensure request_data is a valid JSON string."
+
+    if not isinstance(data, dict):
+        return f"Error: Request data must be a JSON object (dictionary), but got {type(data).__name__}."
 
     # extraction for search
     req_body = data.get("request", {})
